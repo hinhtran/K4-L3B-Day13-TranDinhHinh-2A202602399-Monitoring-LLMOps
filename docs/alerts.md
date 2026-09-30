@@ -22,39 +22,48 @@ Ví dụ dưới đây minh họa mức độ cụ thể cần có. Học viên 
 
 ## Alert 1
 
-- Tên:
-- Severity:
-- Duration:
-- Kênh thông báo: Slack
-- SLI/SLO liên quan:
-- Điều kiện và thời gian duy trì:
-- Ảnh hưởng tới người dùng:
+- Tên: `HighLatencyP95`
+- Severity: `warning`
+- Duration: `5m`
+- Kênh thông báo: Slack `#k4-l3b-alerts`
+- SLI/SLO liên quan: Latency P95 của `response_sent.latency_ms` <= 3000ms
+- Điều kiện và thời gian duy trì: `p95(latency_ms) > 3000ms` duy trì liên tục trong 5 phút
+- Ảnh hưởng tới người dùng: Trải nghiệm người dùng suy giảm nghiêm trọng, thời gian phản hồi câu trả lời quá chậm
 - Ba bước kiểm tra đầu tiên:
-- Mitigation tạm thời:
-- Owner:
+  1. Mở dashboard panel **Latency** để xác nhận P50/P95/P99 và khoảng thời gian latency bắt đầu tăng vọt.
+  2. Lọc file log `data/logs.jsonl` trong khung giờ đó, lấy ra các `correlation_id` có `latency_ms > 3000`.
+  3. Mở trace có `correlation_id` đó trên Langfuse, đối chiếu thời gian của span `retrieval` và span `generation` để xác định bước gây nghẽn.
+- Mitigation tạm thời: Nếu do retrieval quá tải hoặc RAG mock lag, restart/giảm tải; nếu do model/prompt, rollback prompt label `production` về version ổn định trước đó.
+- Owner: `team-oncall`
 
 ## Alert 2
 
-- Tên:
-- Severity:
-- Duration:
-- Kênh thông báo: Slack
-- SLI/SLO liên quan:
-- Điều kiện và thời gian duy trì:
-- Ảnh hưởng tới người dùng:
+- Tên: `HighErrorRate`
+- Severity: `critical`
+- Duration: `3m`
+- Kênh thông báo: Slack `#k4-l3b-alerts`
+- SLI/SLO liên quan: Tỉ lệ lỗi tổng thể `error_rate_pct` <= 2%
+- Điều kiện và thời gian duy trì: `count(request_failed) / count(request_received) * 100 > 2%` trong 3 phút
+- Ảnh hưởng tới người dùng: Người dùng nhận mã lỗi HTTP 500 khi gửi câu hỏi vào API chat, làm gián đoạn dịch vụ
 - Ba bước kiểm tra đầu tiên:
-- Mitigation tạm thời:
-- Owner:
+  1. Mở dashboard panel **Errors** để kiểm tra tỉ lệ lỗi và phân bố theo `error_type` (ví dụ: `RuntimeError`, `TimeoutError`).
+  2. Tra cứu `event == "request_failed"` trong `data/logs.jsonl`, trích xuất `correlation_id` và trường `payload.detail`.
+  3. Mở trace lỗi tương ứng trên Langfuse để xem exception stack trace tại span nào (`retrieval` hay `generation`).
+- Mitigation tạm thời: Kiểm tra trạng thái incident inject (`/health`), tắt incident giả lập nếu đang diễn ra (`/incidents/{name}/disable`) hoặc chuyển hướng traffic sang backup instance.
+- Owner: `team-oncall`
 
 ## Alert 3
 
-- Tên:
-- Severity:
-- Duration:
-- Kênh thông báo: Slack
-- SLI/SLO liên quan:
-- Điều kiện và thời gian duy trì:
-- Ảnh hưởng tới người dùng:
+- Tên: `LowRetrievalSuccess`
+- Severity: `warning`
+- Duration: `5m`
+- Kênh thông báo: Slack `#k4-l3b-alerts`
+- SLI/SLO liên quan: Tỉ lệ thành công của Retrieval `retrieval_success_rate_pct` >= 90%
+- Điều kiện và thời gian duy trì: `tool_success_rate_pct < 90%` trong 5 phút
+- Ảnh hưởng tới người dùng: RAG không trích xuất được tài liệu phù hợp, dẫn đến câu trả lời thiếu ngữ cảnh hoặc bị fallback
 - Ba bước kiểm tra đầu tiên:
-- Mitigation tạm thời:
-- Owner:
+  1. Mở dashboard panel **Errors** kiểm tra metric `tool_success_rate_pct` và số lượt thất bại của `tool_name="retrieval"`.
+  2. Lọc log có `tool_name == "retrieval"` và `tool_success == false` trong `data/logs.jsonl` để lấy `correlation_id`.
+  3. Mở trace trên Langfuse, kiểm tra input query và lỗi timeout/kết nối của vector store trong span retrieval.
+- Mitigation tạm thời: Kiểm tra kết nối tới Vector DB, kích hoạt fallback bộ nhớ đệm (cached context) và khởi động lại vector store service.
+- Owner: `team-oncall`
